@@ -1,0 +1,19 @@
+# Binaries
+backend/main
+backend/*.exe
+
+# Modules
+node_modules/
+
+# Build
+dist/
+tmp/
+
+# OS
+.DS_Store
+
+# Env
+.env
+
+# SurrealDB
+data/
