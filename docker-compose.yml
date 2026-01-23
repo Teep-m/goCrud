@@ -2,7 +2,7 @@ services:
   backend:
     build: ./backend
     ports:
-      - "8080:8080"
+      - "8084:8084"
     environment:
       - SURREAL_URL=ws://surrealdb:8000/rpc
     depends_on:
@@ -11,12 +11,13 @@ services:
   frontend:
     build: ./frontend
     ports:
-      - "5173:80"
+      - "5174:80"
     depends_on:
       - backend
 
   surrealdb:
     image: surrealdb/surrealdb:latest
+    user: root
     ports:
       - "8000:8000"
     command: start --user root --pass root file://data/database.db
