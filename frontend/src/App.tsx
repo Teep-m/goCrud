@@ -1,5 +1,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import './App.css'
+import { useAuth } from './contexts/AuthContext'
+import { LoginPage } from './components/LoginPage'
 
 // Types
 interface Transaction {
@@ -50,6 +52,8 @@ const formatDate = (dateStr: string): string => {
 }
 
 function App() {
+  const { user, loading: authLoading, signOut, getIdToken } = useAuth()
+
   // State
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [categories, setCategories] = useState<Category[]>([])
@@ -64,13 +68,18 @@ function App() {
   const [formDate, setFormDate] = useState(new Date().toISOString().split('T')[0])
   const [submitting, setSubmitting] = useState(false)
 
-  // Fetch data
+  // Fetch data with auth token
   const fetchData = useCallback(async () => {
+    if (!user) return
+    
     try {
+      const token = await getIdToken()
+      const headers: HeadersInit = token ? { 'Authorization': `Bearer ${token}` } : {}
+
       const [txRes, catRes, sumRes] = await Promise.all([
-        fetch(`${API_BASE}/transactions`),
-        fetch(`${API_BASE}/categories`),
-        fetch(`${API_BASE}/summary`)
+        fetch(`${API_BASE}/transactions`, { headers }),
+        fetch(`${API_BASE}/categories`, { headers }),
+        fetch(`${API_BASE}/summary`, { headers })
       ])
 
       if (txRes.ok) {
@@ -92,11 +101,15 @@ function App() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [user, getIdToken])
 
   useEffect(() => {
-    fetchData()
-  }, [fetchData])
+    if (user) {
+      fetchData()
+    } else if (!authLoading) {
+      setLoading(false)
+    }
+  }, [user, authLoading, fetchData])
 
   // Get category info
   const getCategoryInfo = (categoryName: string): Category | undefined => {
@@ -116,16 +129,22 @@ function App() {
   // Handle form submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!formAmount || !formCategory) return
+    if (!formAmount || !formCategory || !user) return
 
     setSubmitting(true)
     try {
+      const token = await getIdToken()
+      const headers: HeadersInit = {
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      }
+
       const res = await fetch(`${API_BASE}/transactions`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           type: formType,
-          amount: parseFloat(formAmount),
+          amount: Number.parseFloat(formAmount),
           category: formCategory,
           description: formDescription,
           date: formDate
@@ -147,10 +166,14 @@ function App() {
 
   // Handle delete
   const handleDelete = async (id: any) => {
+    if (!user) return
     const recordId = getRecordId(id)
     try {
+      const token = await getIdToken()
+      const headers: HeadersInit = token ? { 'Authorization': `Bearer ${token}` } : {}
       const res = await fetch(`${API_BASE}/transactions/${encodeURIComponent(recordId)}`, {
-        method: 'DELETE'
+        method: 'DELETE',
+        headers
       })
       if (res.ok) {
         fetchData()
@@ -165,7 +188,12 @@ function App() {
     return new Date(b.date).getTime() - new Date(a.date).getTime()
   })
 
-  if (loading) {
+  // Show login page if not authenticated
+  if (!user && !authLoading) {
+    return <LoginPage />
+  }
+
+  if (loading || authLoading) {
     return (
       <div className="loading-screen">
         <div className="loading" style={{ width: '100px', height: '20px' }}></div>
@@ -181,7 +209,7 @@ function App() {
           <span className="header__icon">💰</span>
           <div className="header__text">
             <h1>Personal Finance</h1>
-            <p>収支を賢く管理しよう</p>
+            <p>{user?.email || '収支を賢く管理しよう'}</p>
           </div>
         </div>
         <div className="header__balance">
@@ -189,6 +217,13 @@ function App() {
           <p className="header__balance-value">
             {summary ? formatCurrency(summary.balance) : '¥0'}
           </p>
+          <button 
+            onClick={() => signOut()} 
+            className="logout-button"
+            style={{ marginTop: '8px', padding: '4px 12px', fontSize: '12px', cursor: 'pointer', borderRadius: '4px', border: 'none', background: '#4b5563', color: '#fff' }}
+          >
+            ログアウト
+          </button>
         </div>
       </header>
 

@@ -17,6 +17,7 @@ import (
 // Transaction represents a financial transaction (income or expense)
 type Transaction struct {
 	ID          *models.RecordID `json:"id,omitempty"`
+	UserID      string           `json:"user_id,omitempty"`
 	Type        string           `json:"type"` // "income" or "expense"
 	Amount      float64          `json:"amount"`
 	Category    string           `json:"category"`
@@ -27,11 +28,12 @@ type Transaction struct {
 
 // Category represents a transaction category
 type Category struct {
-	ID    *models.RecordID `json:"id,omitempty"`
-	Name  string           `json:"name"`
-	Type  string           `json:"type"` // "income" or "expense"
-	Icon  string           `json:"icon"`
-	Color string           `json:"color"`
+	ID     *models.RecordID `json:"id,omitempty"`
+	UserID string           `json:"user_id,omitempty"`
+	Name   string           `json:"name"`
+	Type   string           `json:"type"` // "income" or "expense"
+	Icon   string           `json:"icon"`
+	Color  string           `json:"color"`
 }
 
 // Summary represents monthly financial summary
@@ -52,7 +54,7 @@ func main() {
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
 		AllowOrigins: []string{"*"},
 		AllowMethods: []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodDelete},
-		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
+		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
 	}))
 
 	// Connect to SurrealDB
@@ -113,6 +115,15 @@ func main() {
 
 		// Initialize default categories
 		initDefaultCategories()
+
+		// Initialize user table
+		InitUserTable()
+	}
+
+	// Initialize Firebase Auth
+	if err := InitFirebase(); err != nil {
+		e.Logger.Printf("Warning: Firebase not initialized: %v", err)
+		e.Logger.Printf("Authentication will not be available")
 	}
 
 	// Routes
@@ -120,19 +131,26 @@ func main() {
 		return c.String(http.StatusOK, "Personal Finance Manager API")
 	})
 
-	// Transaction routes
-	e.GET("/api/transactions", getTransactions)
-	e.POST("/api/transactions", createTransaction)
-	e.PUT("/api/transactions/:id", updateTransaction)
-	e.DELETE("/api/transactions/:id", deleteTransaction)
+	// Protected routes (require authentication)
+	api := e.Group("/api")
+	api.Use(AuthMiddleware)
 
-	// Category routes
-	e.GET("/api/categories", getCategories)
-	e.POST("/api/categories", createCategory)
-	e.DELETE("/api/categories/:id", deleteCategory)
+	// Auth routes
+	api.GET("/auth/me", getCurrentUserHandler)
+
+	// Transaction routes
+	api.GET("/transactions", getTransactions)
+	api.POST("/transactions", createTransaction)
+	api.PUT("/transactions/:id", updateTransaction)
+	api.DELETE("/transactions/:id", deleteTransaction)
+
+	// Category routes (GET is public, others require auth)
+	e.GET("/api/categories", getCategories) // Public - no auth required
+	api.POST("/categories", createCategory)
+	api.DELETE("/categories/:id", deleteCategory)
 
 	// Summary route
-	e.GET("/api/summary", getSummary)
+	api.GET("/summary", getSummary)
 
 	e.Logger.Fatal(e.Start(":8084"))
 }
@@ -171,19 +189,53 @@ func initDefaultCategories() {
 	fmt.Println("Default categories initialized")
 }
 
+// getCurrentUserHandler returns the current authenticated user
+func getCurrentUserHandler(c echo.Context) error {
+	claims, err := GetCurrentUser(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Not authenticated"})
+	}
+
+	// Get or create user in database
+	user, err := GetOrCreateUser(claims)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+	}
+
+	return c.JSON(http.StatusOK, user)
+}
+
 // Transaction handlers
 func getTransactions(c echo.Context) error {
+	claims, err := GetCurrentUser(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Not authenticated"})
+	}
+
+	// Get all transactions and filter by user_id
 	data, err := surrealdb.Select[[]Transaction](context.Background(), db, "transaction")
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
-	if data == nil {
-		return c.JSON(http.StatusOK, []Transaction{})
+
+	var userTransactions []Transaction
+	if data != nil {
+		for _, tx := range *data {
+			if tx.UserID == claims.UID {
+				userTransactions = append(userTransactions, tx)
+			}
+		}
 	}
-	return c.JSON(http.StatusOK, data)
+
+	return c.JSON(http.StatusOK, userTransactions)
 }
 
 func createTransaction(c echo.Context) error {
+	claims, err := GetCurrentUser(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Not authenticated"})
+	}
+
 	tx := new(Transaction)
 	if err := c.Bind(tx); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -197,7 +249,8 @@ func createTransaction(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Amount must be positive"})
 	}
 
-	// Set created_at
+	// Set user_id and created_at
+	tx.UserID = claims.UID
 	tx.CreatedAt = time.Now().Format(time.RFC3339)
 
 	created, err := surrealdb.Create[Transaction](context.Background(), db, "transaction", tx)
@@ -310,6 +363,12 @@ func deleteCategory(c echo.Context) error {
 
 // Summary handler
 func getSummary(c echo.Context) error {
+	claims, err := GetCurrentUser(c)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Not authenticated"})
+	}
+
+	// Get all transactions and filter by user_id
 	data, err := surrealdb.Select[[]Transaction](context.Background(), db, "transaction")
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -321,11 +380,13 @@ func getSummary(c echo.Context) error {
 
 	if data != nil {
 		for _, tx := range *data {
-			if tx.Type == "income" {
-				summary.TotalIncome += tx.Amount
-			} else {
-				summary.TotalExpense += tx.Amount
-				summary.ByCategory[tx.Category] += tx.Amount
+			if tx.UserID == claims.UID {
+				if tx.Type == "income" {
+					summary.TotalIncome += tx.Amount
+				} else {
+					summary.TotalExpense += tx.Amount
+					summary.ByCategory[tx.Category] += tx.Amount
+				}
 			}
 		}
 	}

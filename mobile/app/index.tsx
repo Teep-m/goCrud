@@ -1,6 +1,6 @@
 // Home Screen - Transaction List and Summary
 
-import React, { useEffect } from 'react';
+import React, { useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   RefreshControl,
   ActivityIndicator,
 } from 'react-native';
-import { Link } from 'expo-router';
+import { Link, useFocusEffect } from 'expo-router';
 import { useApi } from '../src/hooks/useApi';
 import { SummaryCard } from '../src/components/SummaryCard';
 import { TransactionItem } from '../src/components/TransactionItem';
@@ -28,9 +28,12 @@ export default function HomeScreen() {
     deleteTransaction,
   } = useApi();
 
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  // Refetch data every time screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      fetchData();
+    }, [fetchData])
+  );
 
   // Sort transactions by date (newest first)
   const sortedTransactions = [...transactions].sort((a, b) => {

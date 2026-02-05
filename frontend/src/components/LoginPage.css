@@ -1,0 +1,94 @@
+.login-container {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0a0a0f 0%, #13131a 50%, #1a1a25 100%);
+  padding: 20px;
+}
+
+.login-card {
+  background: rgba(26, 26, 38, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px;
+  padding: 48px;
+  max-width: 400px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.login-header h1 {
+  font-size: 2rem;
+  margin: 0 0 8px 0;
+  background: linear-gradient(135deg, #a78bfa 0%, #8b5cf6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.login-header p {
+  color: #9ca3af;
+  margin: 0 0 32px 0;
+  font-size: 1rem;
+}
+
+.login-buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.login-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 14px 24px;
+  border-radius: 12px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: none;
+}
+
+.login-button.google {
+  background: #ffffff;
+  color: #1f2937;
+}
+
+.login-button.google:hover {
+  background: #f3f4f6;
+  transform: translateY(-2px);
+}
+
+.login-button.apple {
+  background: #000000;
+  color: #ffffff;
+}
+
+.login-button.apple:hover {
+  background: #1f2937;
+  transform: translateY(-2px);
+}
+
+.login-icon {
+  width: 20px;
+  height: 20px;
+}
+
+.login-footer {
+  margin-top: 32px;
+}
+
+.login-footer p {
+  color: #6b7280;
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.loading-spinner {
+  color: #9ca3af;
+  font-size: 1.125rem;
+}
